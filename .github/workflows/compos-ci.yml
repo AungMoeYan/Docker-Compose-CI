@@ -1,0 +1,65 @@
+
+name: compose-ci
+
+on:
+  push:
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Inspect repository and validate Compose file
+      - name: Validate Compose configuration
+        run: |
+          echo "Current directory:"
+          pwd
+
+          echo "Repository files:"
+          ls -la
+
+          echo "Compose file:"
+          ls -l compose.yml
+
+          echo "Validate configuration:"
+          docker compose -f compose.yml config
+
+      # 3. Build and start Flask + PostgreSQL
+      - name: Build and start services
+        run: docker compose -f compose.yml up -d --build
+
+      # 4. Wait for application readiness
+      - name: Wait for application
+        run: |
+          for i in {1..30}; do
+            if curl --fail http://localhost:5000/health; then
+              echo "Application is ready!"
+              exit 0
+            fi
+
+            echo "Waiting for application..."
+            sleep 2
+          done
+
+          echo "Application failed to become ready."
+          exit 1
+
+      # 5. Test application homepage
+      - name: Test application homepage
+        run: |
+          curl --fail http://localhost:5000/
+          echo "Homepage test passed!"
+
+      # 6. Collect logs if something fails
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose -f compose.yml logs || true
+
+      # 7. Clean up containers and resources
+      - name: Clean up
+        if: always()
+        run: docker compose -f compose.yml down --volumes --remove-orphans || true
